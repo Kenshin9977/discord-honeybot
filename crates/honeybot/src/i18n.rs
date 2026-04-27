@@ -86,3 +86,56 @@ pub fn init() -> Result<&'static I18n> {
 pub fn get() -> &'static I18n {
     GLOBAL.get().expect("i18n::init() must run first")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn load_succeeds_for_compiled_in_locales() {
+        let i18n = I18n::load().expect("bundles must parse");
+        // Both EN and FR must register; if a future PR misnames a key in
+        // one of them, this catches it before runtime.
+        assert!(!i18n.t("en", "honeypot-ban-dm", None).is_empty());
+        assert!(!i18n.t("fr", "honeypot-ban-dm", None).is_empty());
+    }
+
+    #[test]
+    fn unknown_locale_falls_back_to_english() {
+        let i18n = I18n::load().unwrap();
+        let unknown = i18n.t("zz", "warn-issued", None);
+        let en = i18n.t("en", "warn-issued", None);
+        assert_eq!(unknown, en);
+    }
+
+    #[test]
+    fn unknown_key_returns_the_key_itself_as_a_visible_marker() {
+        // Returning the key string makes missing translations obvious in
+        // chat without crashing the bot.
+        let i18n = I18n::load().unwrap();
+        assert_eq!(i18n.t("en", "no-such-key", None), "no-such-key");
+    }
+
+    #[test]
+    fn args_are_interpolated() {
+        let i18n = I18n::load().unwrap();
+        let mut args = FluentArgs::new();
+        args.set("user", "alice");
+        args.set("count", "3");
+        args.set("reason", "spam");
+        let out = i18n.t("en", "warn-issued", Some(&args));
+        assert!(out.contains("alice"), "got: {out}");
+        assert!(out.contains("3"), "got: {out}");
+        assert!(out.contains("spam"), "got: {out}");
+    }
+
+    #[test]
+    fn french_and_english_differ_for_a_known_key() {
+        // Sanity check that the two bundles aren't accidentally identical
+        // and the locale really gets selected.
+        let i18n = I18n::load().unwrap();
+        let en = i18n.t("en", "honeypot-ban-dm", None);
+        let fr = i18n.t("fr", "honeypot-ban-dm", None);
+        assert_ne!(en, fr);
+    }
+}

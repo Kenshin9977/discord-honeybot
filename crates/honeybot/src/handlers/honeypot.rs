@@ -55,7 +55,13 @@ pub async fn on_message(state: Arc<AppState>, msg: Message) -> Result<()> {
         return Ok(()); // not a honeypot channel
     };
 
-    if member_is_whitelisted(&msg, &hp.whitelist_role_ids) {
+    let author_role_ids: Vec<u64> = msg
+        .member
+        .as_ref()
+        .map(|m| m.roles.iter().map(|r| r.get()).collect())
+        .unwrap_or_default();
+
+    if whitelist_matches(&author_role_ids, &hp.whitelist_role_ids) {
         info!(
             guild_id = guild_id.get(),
             channel_id = msg.channel_id.get(),
@@ -107,23 +113,19 @@ pub async fn on_message(state: Arc<AppState>, msg: Message) -> Result<()> {
     Ok(())
 }
 
-/// Returns true when the message author has at least one role listed in the
-/// honeypot channel's `whitelist_role_ids` JSON. Falls back to false on any
-/// parse failure or missing-member condition (closed by default).
-fn member_is_whitelisted(msg: &Message, whitelist_json: &str) -> bool {
+/// Returns true when any of the author's `member_role_ids` is listed in the
+/// channel's `whitelist_role_ids` JSON. Closed by default: any parse failure
+/// or empty whitelist returns false.
+fn whitelist_matches(member_role_ids: &[u64], whitelist_json: &str) -> bool {
     let Ok(whitelisted): Result<Vec<String>, _> = serde_json::from_str(whitelist_json) else {
         return false;
     };
-    if whitelisted.is_empty() {
+    if whitelisted.is_empty() || member_role_ids.is_empty() {
         return false;
     }
-    let Some(member) = &msg.member else {
-        return false;
-    };
-    member
-        .roles
+    member_role_ids
         .iter()
-        .any(|r| whitelisted.iter().any(|w| w == &r.get().to_string()))
+        .any(|r| whitelisted.iter().any(|w| w == &r.to_string()))
 }
 
 async fn send_dm(state: &AppState, msg: &Message, locale: &str, action: &str) -> Result<()> {
@@ -206,4 +208,46 @@ async fn apply_action(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn whitelist_empty_json_array_matches_nothing() {
+        assert!(!whitelist_matches(&[1, 2, 3], "[]"));
+    }
+
+    #[test]
+    fn whitelist_invalid_json_is_closed_by_default() {
+        // A malformed `whitelist_role_ids` must NEVER let users through —
+        // closed by default is the safer failure mode for a moderation rule.
+        assert!(!whitelist_matches(&[1], "not json"));
+        assert!(!whitelist_matches(&[1], "{\"oops\": true}"));
+    }
+
+    #[test]
+    fn whitelist_member_with_no_roles_is_not_exempt() {
+        assert!(!whitelist_matches(&[], r#"["42"]"#));
+    }
+
+    #[test]
+    fn whitelist_matches_when_role_present() {
+        assert!(whitelist_matches(&[10, 42, 99], r#"["42"]"#));
+    }
+
+    #[test]
+    fn whitelist_does_not_match_when_role_absent() {
+        assert!(!whitelist_matches(&[10, 99], r#"["42", "1000"]"#));
+    }
+
+    #[test]
+    fn whitelist_handles_large_u64_role_ids() {
+        // Discord snowflakes don't fit in i64 in the worst case; the JSON
+        // round-trip stores them as strings precisely to keep precision.
+        let big = u64::MAX - 7;
+        let json = format!(r#"["{big}"]"#);
+        assert!(whitelist_matches(&[big], &json));
+    }
 }
