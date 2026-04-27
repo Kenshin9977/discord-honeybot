@@ -17,7 +17,11 @@ pub mod warn;
 /// Build the full command list this bot exposes. Called once and pushed to
 /// every guild as the bot connects.
 pub fn definitions() -> Vec<twilight_model::application::command::Command> {
-    vec![honeypot::definition(), warn::definition()]
+    vec![
+        setup::definition(),
+        honeypot::definition(),
+        warn::definition(),
+    ]
 }
 
 /// Push `definitions()` to a single guild. Idempotent.
@@ -46,6 +50,7 @@ pub async fn dispatch(
     };
 
     match command_data.name.as_str() {
+        "honeybot" => setup::handle(state, application_id, interaction, *command_data).await,
         "honeypot" => honeypot::handle(state, application_id, interaction, *command_data).await,
         "warn" => warn::handle(state, application_id, interaction, *command_data).await,
         other => {

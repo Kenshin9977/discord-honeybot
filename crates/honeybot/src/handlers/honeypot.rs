@@ -20,6 +20,7 @@ use crate::i18n;
 struct HoneypotRow {
     action: String,
     action_duration_s: Option<i64>,
+    whitelist_role_ids: String,
 }
 
 #[derive(FromRow)]
@@ -40,7 +41,7 @@ pub async fn on_message(state: Arc<AppState>, msg: Message) -> Result<()> {
     let channel_db = msg.channel_id.get() as i64;
 
     let hp: Option<HoneypotRow> = sqlx::query_as(
-        "SELECT action, action_duration_s
+        "SELECT action, action_duration_s, whitelist_role_ids
          FROM honeypot_channels
          WHERE guild_id = ? AND channel_id = ?",
     )
@@ -53,6 +54,16 @@ pub async fn on_message(state: Arc<AppState>, msg: Message) -> Result<()> {
     let Some(hp) = hp else {
         return Ok(()); // not a honeypot channel
     };
+
+    if member_is_whitelisted(&msg, &hp.whitelist_role_ids) {
+        info!(
+            guild_id = guild_id.get(),
+            channel_id = msg.channel_id.get(),
+            user_id = msg.author.id.get(),
+            "honeypot skipped: author has exempted role"
+        );
+        return Ok(());
+    }
 
     let guild: GuildRow =
         sqlx::query_as("SELECT locale, notification_channel_id FROM guilds WHERE id = ?")
@@ -94,6 +105,25 @@ pub async fn on_message(state: Arc<AppState>, msg: Message) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Returns true when the message author has at least one role listed in the
+/// honeypot channel's `whitelist_role_ids` JSON. Falls back to false on any
+/// parse failure or missing-member condition (closed by default).
+fn member_is_whitelisted(msg: &Message, whitelist_json: &str) -> bool {
+    let Ok(whitelisted): Result<Vec<String>, _> = serde_json::from_str(whitelist_json) else {
+        return false;
+    };
+    if whitelisted.is_empty() {
+        return false;
+    }
+    let Some(member) = &msg.member else {
+        return false;
+    };
+    member
+        .roles
+        .iter()
+        .any(|r| whitelisted.iter().any(|w| w == &r.get().to_string()))
 }
 
 async fn send_dm(state: &AppState, msg: &Message, locale: &str, action: &str) -> Result<()> {

@@ -1,4 +1,5 @@
-//! `/honeypot add|remove|list` — manage honeypot channels for a guild.
+//! `/honeypot add|remove|list` and `/honeypot whitelist add|remove|list` —
+//! manage honeypot channels and per-channel role exemptions for a guild.
 
 use anyhow::{Context, Result, anyhow};
 use std::sync::Arc;
@@ -11,9 +12,10 @@ use twilight_model::http::interaction::{
     InteractionResponse, InteractionResponseData, InteractionResponseType,
 };
 use twilight_model::id::Id;
-use twilight_model::id::marker::{ApplicationMarker, ChannelMarker};
+use twilight_model::id::marker::{ApplicationMarker, ChannelMarker, GuildMarker, RoleMarker};
 use twilight_util::builder::command::{
-    ChannelBuilder, CommandBuilder, StringBuilder, SubCommandBuilder,
+    ChannelBuilder, CommandBuilder, RoleBuilder, StringBuilder, SubCommandBuilder,
+    SubCommandGroupBuilder,
 };
 
 use crate::bot::AppState;
@@ -47,6 +49,22 @@ pub fn definition() -> Command {
         "list",
         "List configured honeypot channels.",
     ))
+    .option(
+        SubCommandGroupBuilder::new(
+            "whitelist",
+            "Manage role exemptions for a honeypot channel.",
+        )
+        .subcommands([
+            SubCommandBuilder::new("add", "Exempt a role from a honeypot channel.")
+                .option(ChannelBuilder::new("channel", "The honeypot channel.").required(true))
+                .option(RoleBuilder::new("role", "Role to exempt.").required(true)),
+            SubCommandBuilder::new("remove", "Stop exempting a role from a honeypot channel.")
+                .option(ChannelBuilder::new("channel", "The honeypot channel.").required(true))
+                .option(RoleBuilder::new("role", "Role to stop exempting.").required(true)),
+            SubCommandBuilder::new("list", "List exempted roles for a honeypot channel.")
+                .option(ChannelBuilder::new("channel", "The honeypot channel.").required(true)),
+        ]),
+    )
     .build()
 }
 
@@ -71,15 +89,14 @@ pub async fn handle(
         .first()
         .ok_or_else(|| anyhow!("missing subcommand"))?;
 
-    let CommandOptionValue::SubCommand(sub_options) = &sub.value else {
-        return Err(anyhow!("expected subcommand value"));
-    };
-
-    let content = match sub.name.as_str() {
-        "add" => add(&state, guild_id, sub_options).await?,
-        "remove" => remove(&state, guild_id, sub_options).await?,
-        "list" => list(&state, guild_id).await?,
-        other => format!("Unknown subcommand `{other}`."),
+    let content = match (&sub.name[..], &sub.value) {
+        ("add", CommandOptionValue::SubCommand(opts)) => add(&state, guild_id, opts).await?,
+        ("remove", CommandOptionValue::SubCommand(opts)) => remove(&state, guild_id, opts).await?,
+        ("list", CommandOptionValue::SubCommand(_)) => list(&state, guild_id).await?,
+        ("whitelist", CommandOptionValue::SubCommandGroup(group)) => {
+            whitelist(&state, guild_id, group).await?
+        }
+        (other, _) => format!("Unknown subcommand `{other}`."),
     };
 
     reply(&state, application_id, &interaction, &content).await
@@ -183,6 +200,149 @@ async fn list(
         }
     }
     Ok(out)
+}
+
+async fn whitelist(
+    state: &AppState,
+    guild_id: Id<GuildMarker>,
+    group: &[CommandDataOption],
+) -> Result<String> {
+    let inner = group
+        .first()
+        .ok_or_else(|| anyhow!("missing whitelist subcommand"))?;
+    let CommandOptionValue::SubCommand(opts) = &inner.value else {
+        return Err(anyhow!("expected subcommand value under whitelist"));
+    };
+
+    match inner.name.as_str() {
+        "add" => whitelist_add(state, guild_id, opts).await,
+        "remove" => whitelist_remove(state, guild_id, opts).await,
+        "list" => whitelist_list(state, guild_id, opts).await,
+        other => Ok(format!("Unknown whitelist subcommand `{other}`.")),
+    }
+}
+
+async fn whitelist_add(
+    state: &AppState,
+    guild_id: Id<GuildMarker>,
+    opts: &[CommandDataOption],
+) -> Result<String> {
+    let channel = option_channel(opts, "channel")?;
+    let role = option_role(opts, "role")?;
+
+    let mut roles = read_whitelist(state, guild_id, channel).await?;
+    let role_str = role.get().to_string();
+    if !roles.iter().any(|r| r == &role_str) {
+        roles.push(role_str);
+        write_whitelist(state, guild_id, channel, &roles).await?;
+    }
+
+    Ok(format!(
+        "Role <@&{}> exempted from <#{}>.",
+        role.get(),
+        channel.get()
+    ))
+}
+
+async fn whitelist_remove(
+    state: &AppState,
+    guild_id: Id<GuildMarker>,
+    opts: &[CommandDataOption],
+) -> Result<String> {
+    let channel = option_channel(opts, "channel")?;
+    let role = option_role(opts, "role")?;
+
+    let mut roles = read_whitelist(state, guild_id, channel).await?;
+    let role_str = role.get().to_string();
+    let before = roles.len();
+    roles.retain(|r| r != &role_str);
+    if roles.len() == before {
+        return Ok(format!("Role <@&{}> was not in the whitelist.", role.get()));
+    }
+    write_whitelist(state, guild_id, channel, &roles).await?;
+
+    Ok(format!(
+        "Role <@&{}> removed from <#{}> whitelist.",
+        role.get(),
+        channel.get()
+    ))
+}
+
+async fn whitelist_list(
+    state: &AppState,
+    guild_id: Id<GuildMarker>,
+    opts: &[CommandDataOption],
+) -> Result<String> {
+    let channel = option_channel(opts, "channel")?;
+    let roles = read_whitelist(state, guild_id, channel).await?;
+
+    if roles.is_empty() {
+        return Ok(format!("No exempted roles for <#{}>.", channel.get()));
+    }
+
+    let mut out = format!("**Exempted roles for <#{}>:**\n", channel.get());
+    for role in roles {
+        out.push_str(&format!("• <@&{role}>\n"));
+    }
+    Ok(out)
+}
+
+async fn read_whitelist(
+    state: &AppState,
+    guild_id: Id<GuildMarker>,
+    channel: Id<ChannelMarker>,
+) -> Result<Vec<String>> {
+    let json: Option<String> = sqlx::query_scalar(
+        "SELECT whitelist_role_ids FROM honeypot_channels
+         WHERE guild_id = ? AND channel_id = ?",
+    )
+    .bind(guild_id.get() as i64)
+    .bind(channel.get() as i64)
+    .fetch_optional(&state.db)
+    .await
+    .context("read whitelist")?;
+
+    let Some(json) = json else {
+        return Err(anyhow!(
+            "<#{}> is not configured as a honeypot.",
+            channel.get()
+        ));
+    };
+
+    let roles: Vec<String> =
+        serde_json::from_str(&json).context("parse whitelist_role_ids JSON")?;
+    Ok(roles)
+}
+
+async fn write_whitelist(
+    state: &AppState,
+    guild_id: Id<GuildMarker>,
+    channel: Id<ChannelMarker>,
+    roles: &[String],
+) -> Result<()> {
+    let json = serde_json::to_string(roles).context("serialize whitelist")?;
+    sqlx::query(
+        "UPDATE honeypot_channels SET whitelist_role_ids = ?
+         WHERE guild_id = ? AND channel_id = ?",
+    )
+    .bind(json)
+    .bind(guild_id.get() as i64)
+    .bind(channel.get() as i64)
+    .execute(&state.db)
+    .await
+    .context("update whitelist")?;
+    Ok(())
+}
+
+fn option_role(options: &[CommandDataOption], name: &str) -> Result<Id<RoleMarker>> {
+    options
+        .iter()
+        .find(|o| o.name == name)
+        .and_then(|o| match o.value {
+            CommandOptionValue::Role(id) => Some(id),
+            _ => None,
+        })
+        .ok_or_else(|| anyhow!("missing role option `{name}`"))
 }
 
 fn option_channel(options: &[CommandDataOption], name: &str) -> Result<Id<ChannelMarker>> {
