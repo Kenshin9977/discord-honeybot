@@ -8,6 +8,7 @@ use anyhow::Result;
 
 mod api;
 mod auth;
+mod config;
 mod db;
 mod fanout;
 mod reputation;
