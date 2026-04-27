@@ -1,0 +1,12 @@
+target/
+.git/
+.github/
+docs/
+*.md
+.env
+.env.*
+data/
+*.db*
+.vscode/
+.idea/
+.DS_Store
