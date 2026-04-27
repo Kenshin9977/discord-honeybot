@@ -1,7 +1,7 @@
 //! Axum router root and HTTP server.
 
 use anyhow::{Context, Result};
-use axum::{Router, http::StatusCode, routing::get};
+use axum::{Router, http::StatusCode, middleware::from_fn_with_state, routing::get, routing::post};
 use sqlx::PgPool;
 use std::sync::Arc;
 use tracing::info;
@@ -30,8 +30,20 @@ pub async fn serve() -> Result<()> {
         registry_secret: secret_bytes,
     };
 
+    // Routes that require Bearer auth.
+    let authed = Router::new()
+        .route("/pools", post(pools::create))
+        .route("/pools/join", post(pools::join))
+        .route("/pools/{id}", get(pools::get))
+        .route_layer(from_fn_with_state(
+            state.clone(),
+            crate::auth::require_token,
+        ));
+
     let router = Router::new()
         .route("/health", get(health))
+        .route("/auth/register", post(auth::register))
+        .merge(authed)
         .with_state(state);
 
     let addr: std::net::SocketAddr = config
