@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "Discord bot: honeypot channels + warns/strikes + federated ban pools."
+description = "Discord bot: honeypot channels and warns/strikes with auto-escalation."
 
 [[bin]]
 name = "honeybot"
@@ -20,7 +20,6 @@ twilight-model.workspace = true
 twilight-cache-inmemory.workspace = true
 twilight-util.workspace = true
 sqlx = { workspace = true, features = ["sqlite"] }
-reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
@@ -31,8 +30,4 @@ figment.workspace = true
 fluent.workspace = true
 fluent-bundle.workspace = true
 unic-langid.workspace = true
-hmac.workspace = true
-sha2.workspace = true
-uuid.workspace = true
 chrono.workspace = true
-honeybot-proto.workspace = true

@@ -1,10 +1,6 @@
 [workspace]
 resolver = "3"
-members = [
-    "crates/honeybot",
-    "crates/honeybot-registry",
-    "crates/honeybot-proto",
-]
+members = ["crates/honeybot"]
 
 [workspace.package]
 version = "0.1.0"
@@ -25,16 +21,8 @@ twilight-model = "0.16"
 twilight-cache-inmemory = "0.16"
 twilight-util = { version = "0.16", features = ["builder"] }
 
-# Web (registry only)
-axum = "0.8"
-tower = "0.5"
-tower-http = { version = "0.6", features = ["trace", "cors"] }
-
 # Storage
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "macros", "migrate"] }
-
-# HTTP client (federation)
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -56,17 +44,8 @@ fluent = "0.16"
 fluent-bundle = "0.15"
 unic-langid = "0.9"
 
-# Crypto / auth
-argon2 = "0.5"
-hmac = "0.12"
-sha2 = "0.10"
-
 # Misc
-uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
-
-# Internal crates
-honeybot-proto = { path = "crates/honeybot-proto" }
 
 [profile.release]
 opt-level = 3

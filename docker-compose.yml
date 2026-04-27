@@ -1,6 +1,4 @@
-# Dev / self-host stack: bot + federation registry + Postgres.
-# For "bot only, no federation", use just the `honeybot` service and unset
-# `REGISTRY_URL`.
+# Self-host stack: just the bot + a SQLite volume.
 
 services:
   honeybot:
@@ -11,48 +9,9 @@ services:
     restart: unless-stopped
     environment:
       DISCORD_TOKEN: ${DISCORD_TOKEN:?set DISCORD_TOKEN in .env}
-      REGISTRY_URL: http://registry:8080
       RUST_LOG: ${RUST_LOG:-info}
     volumes:
       - honeybot-data:/data
-    depends_on:
-      registry:
-        condition: service_started
-
-  registry:
-    build:
-      context: .
-      dockerfile: crates/honeybot-registry/Dockerfile
-    image: honeybot-registry:dev
-    restart: unless-stopped
-    environment:
-      DATABASE_URL: postgres://honeybot:honeybot@db:5432/honeybot
-      BIND_ADDR: 0.0.0.0:8080
-      RUST_LOG: ${RUST_LOG:-info}
-    ports:
-      - "${REGISTRY_PORT:-8080}:8080"
-    depends_on:
-      db:
-        condition: service_healthy
-    # No HEALTHCHECK: distroless image has no shell and no curl/wget. The bot
-    # depends on `service_started` rather than `service_healthy`. Once the
-    # registry exposes `GET /health` we can wire a proper one via a sidecar.
-
-  db:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: honeybot
-      POSTGRES_USER: honeybot
-      POSTGRES_PASSWORD: honeybot
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U honeybot -d honeybot"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
 
 volumes:
   honeybot-data:
-  pgdata:

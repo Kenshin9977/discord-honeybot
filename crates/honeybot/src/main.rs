@@ -10,7 +10,6 @@ mod bot;
 mod commands;
 mod config;
 mod db;
-mod federation;
 mod handlers;
 mod i18n;
 

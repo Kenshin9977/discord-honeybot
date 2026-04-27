@@ -11,7 +11,6 @@ use twilight_model::id::marker::{ApplicationMarker, GuildMarker};
 use crate::bot::AppState;
 
 pub mod honeypot;
-pub mod pool;
 pub mod setup;
 pub mod warn;
 

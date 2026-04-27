@@ -23,8 +23,6 @@ docker run -d --name honeybot --restart=unless-stopped \
   ghcr.io/Kenshin9977/honeybot:latest
 ```
 
-Add `-e REGISTRY_URL=https://your.registry.example` to enable federation.
-
 ## Path 2 — Static binary
 
 ```sh

@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 pub struct Config {
     pub discord_token: String,
     pub database_url: String,
-    pub registry_url: Option<String>,
 }
 
 impl Config {

@@ -56,10 +56,7 @@ pub async fn run() -> Result<()> {
     let shard_config = ConfigBuilder::new(token, intents).build();
     let mut shard = Shard::with_config(ShardId::ONE, shard_config);
 
-    info!(
-        registry = config.registry_url.is_some(),
-        "honeybot connecting to Discord"
-    );
+    info!("honeybot connecting to Discord");
 
     while let Some(item) = shard.next_event(EventTypeFlags::all()).await {
         let event = match item {
