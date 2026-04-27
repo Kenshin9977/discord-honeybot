@@ -14,9 +14,11 @@ pub mod stream;
 #[derive(Clone)]
 pub struct AppState {
     pub db: PgPool,
-    /// Wired up by the upcoming HMAC verification in `bans::ingest`.
+    /// Reserved for future HMAC signing of ban events; unused in v1, which
+    /// relies on TLS to the registry for integrity.
     #[allow(dead_code)]
     pub registry_secret: Arc<[u8]>,
+    pub fanout: Arc<crate::fanout::Fanout>,
 }
 
 pub async fn serve() -> Result<()> {
@@ -28,6 +30,7 @@ pub async fn serve() -> Result<()> {
     let state = AppState {
         db,
         registry_secret: secret_bytes,
+        fanout: Arc::new(crate::fanout::Fanout::default()),
     };
 
     // Routes that require Bearer auth.
@@ -35,6 +38,8 @@ pub async fn serve() -> Result<()> {
         .route("/pools", post(pools::create))
         .route("/pools/join", post(pools::join))
         .route("/pools/{id}", get(pools::get))
+        .route("/pools/{id}/bans", post(bans::publish))
+        .route("/pools/{id}/stream", get(stream::stream))
         .route_layer(from_fn_with_state(
             state.clone(),
             crate::auth::require_token,
