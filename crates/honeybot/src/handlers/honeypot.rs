@@ -14,6 +14,7 @@ use twilight_model::id::marker::{ChannelMarker, GuildMarker};
 use twilight_model::util::Timestamp;
 
 use crate::bot::AppState;
+use crate::domain::Action;
 use crate::i18n;
 
 #[derive(FromRow)]
@@ -55,6 +56,9 @@ pub async fn on_message(state: Arc<AppState>, msg: Message) -> Result<()> {
         return Ok(()); // not a honeypot channel
     };
 
+    let action = Action::from_db(&hp.action, hp.action_duration_s)
+        .context("decode persisted honeypot action")?;
+
     let author_role_ids: Vec<u64> = msg
         .member
         .as_ref()
@@ -86,16 +90,16 @@ pub async fn on_message(state: Arc<AppState>, msg: Message) -> Result<()> {
         guild_id = guild_id.get(),
         channel_id = msg.channel_id.get(),
         user_id = msg.author.id.get(),
-        action = %hp.action,
+        action = %action,
         "honeypot triggered"
     );
 
     // Best-effort DM. Failure here must not block the action.
-    if let Err(err) = send_dm(&state, &msg, &guild.locale, &hp.action).await {
+    if let Err(err) = send_dm(&state, &msg, &guild.locale, action).await {
         warn!(?err, "failed to DM user before honeypot action");
     }
 
-    apply_action(&state, guild_id, msg.author.id, &hp).await?;
+    apply_action(&state, guild_id, msg.author.id, action).await?;
 
     if let Some(notif) = guild.notification_channel_id {
         let channel = Id::<ChannelMarker>::new(notif as u64);
@@ -103,7 +107,7 @@ pub async fn on_message(state: Arc<AppState>, msg: Message) -> Result<()> {
             "Honeypot triggered: <@{}> in <#{}> — action: {}",
             msg.author.id.get(),
             msg.channel_id.get(),
-            hp.action
+            action
         );
         if let Err(err) = state.http.create_message(channel).content(&content).await {
             warn!(?err, "failed to post honeypot notification");
@@ -128,14 +132,7 @@ fn whitelist_matches(member_role_ids: &[u64], whitelist_json: &str) -> bool {
         .any(|r| whitelisted.iter().any(|w| w == &r.to_string()))
 }
 
-async fn send_dm(state: &AppState, msg: &Message, locale: &str, action: &str) -> Result<()> {
-    let key = match action {
-        "ban" => "honeypot-ban-dm",
-        "kick" => "honeypot-kick-dm",
-        "timeout" => "honeypot-timeout-dm",
-        _ => "honeypot-ban-dm",
-    };
-
+async fn send_dm(state: &AppState, msg: &Message, locale: &str, action: Action) -> Result<()> {
     let mut args = FluentArgs::new();
     args.set(
         "guild",
@@ -144,7 +141,7 @@ async fn send_dm(state: &AppState, msg: &Message, locale: &str, action: &str) ->
     args.set("channel", msg.channel_id.get().to_string());
     args.set("contact", "your server administrator");
 
-    let text = i18n::get().t(locale, key, Some(&args));
+    let text = i18n::get().t(locale, action.dm_key(), Some(&args));
 
     let dm_channel = state
         .http
@@ -169,12 +166,12 @@ async fn apply_action(
     state: &AppState,
     guild_id: Id<GuildMarker>,
     user_id: twilight_model::id::Id<twilight_model::id::marker::UserMarker>,
-    hp: &HoneypotRow,
+    action: Action,
 ) -> Result<()> {
     let reason = "honeybot: honeypot trigger";
 
-    match hp.action.as_str() {
-        "ban" => {
+    match action {
+        Action::Ban => {
             state
                 .http
                 .create_ban(guild_id, user_id)
@@ -182,7 +179,7 @@ async fn apply_action(
                 .await
                 .context("create ban")?;
         }
-        "kick" => {
+        Action::Kick => {
             state
                 .http
                 .remove_guild_member(guild_id, user_id)
@@ -190,8 +187,7 @@ async fn apply_action(
                 .await
                 .context("kick member")?;
         }
-        "timeout" => {
-            let secs = hp.action_duration_s.unwrap_or(3600);
+        Action::Timeout(secs) => {
             let until_unix = chrono::Utc::now().timestamp() + secs;
             let until = Timestamp::from_secs(until_unix).context("invalid timeout timestamp")?;
             state
@@ -201,9 +197,6 @@ async fn apply_action(
                 .reason(reason)
                 .await
                 .context("apply timeout")?;
-        }
-        other => {
-            warn!(action = other, "unknown honeypot action");
         }
     }
 

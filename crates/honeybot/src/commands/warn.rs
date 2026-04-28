@@ -22,6 +22,7 @@ use twilight_util::builder::command::{
 
 use crate::bot::AppState;
 use crate::commands::util::{option_int, option_int_opt, option_string, option_user, reply};
+use crate::domain::Action;
 
 pub fn definition() -> Command {
     CommandBuilder::new(
@@ -153,12 +154,9 @@ async fn add(
     );
 
     if let Some(action) = applicable_threshold(state, guild_id, count).await? {
-        match escalate(state, guild_id, user_id, &action).await {
+        match escalate(state, guild_id, user_id, action).await {
             Ok(()) => {
-                summary.push_str(&format!(
-                    "\nThreshold reached — auto action: `{}`.",
-                    describe_action(&action)
-                ));
+                summary.push_str(&format!("\nThreshold reached — auto action: `{action}`."));
             }
             Err(err) => {
                 warn_log!(?err, "auto-escalation failed");
@@ -249,14 +247,13 @@ async fn threshold_set(
     options: &[CommandDataOption],
 ) -> Result<String> {
     let count = option_int(options, "count")?;
-    let action = option_string(options, "action")?;
+    let action_kind = option_string(options, "action")?;
     let duration_min = option_int_opt(options, "duration_min");
 
-    let action_duration_s = if action == "timeout" {
-        Some(duration_min.unwrap_or(60).max(1) * 60)
-    } else {
-        None
-    };
+    // Pre-compute the timeout duration; from_db will pick it up if and only
+    // if the action kind is `timeout`.
+    let timeout_secs = duration_min.unwrap_or(60).max(1) * 60;
+    let action = Action::from_db(&action_kind, Some(timeout_secs))?;
 
     sqlx::query("INSERT OR IGNORE INTO guilds (id) VALUES (?)")
         .bind(guild_id.get() as i64)
@@ -273,19 +270,13 @@ async fn threshold_set(
     )
     .bind(guild_id.get() as i64)
     .bind(count)
-    .bind(&action)
-    .bind(action_duration_s)
+    .bind(action.kind_str())
+    .bind(action.duration_secs())
     .execute(&state.db)
     .await
     .context("upsert threshold")?;
 
-    Ok(format!(
-        "Threshold set: at {count} warns → `{}`.",
-        describe_action(&ThresholdAction {
-            action: action.clone(),
-            duration_s: action_duration_s,
-        })
-    ))
+    Ok(format!("Threshold set: at {count} warns → `{action}`."))
 }
 
 async fn threshold_list(state: &AppState, guild_id: Id<GuildMarker>) -> Result<String> {
@@ -305,32 +296,18 @@ async fn threshold_list(state: &AppState, guild_id: Id<GuildMarker>) -> Result<S
     }
 
     let mut out = String::from("**Warn thresholds:**\n");
-    for (count, action, duration_s) in rows {
-        out.push_str(&format!(
-            "• {count} warns → `{}`\n",
-            describe_action(&ThresholdAction { action, duration_s })
-        ));
+    for (count, action_str, duration_s) in rows {
+        let action = Action::from_db(&action_str, duration_s)?;
+        out.push_str(&format!("• {count} warns → `{action}`\n"));
     }
     Ok(out)
-}
-
-struct ThresholdAction {
-    action: String,
-    duration_s: Option<i64>,
-}
-
-fn describe_action(t: &ThresholdAction) -> String {
-    match t.action.as_str() {
-        "timeout" => format!("timeout {}m", t.duration_s.unwrap_or(3600) / 60),
-        other => other.to_owned(),
-    }
 }
 
 async fn applicable_threshold(
     state: &AppState,
     guild_id: Id<GuildMarker>,
     warn_count: i64,
-) -> Result<Option<ThresholdAction>> {
+) -> Result<Option<Action>> {
     let row: Option<(String, Option<i64>)> = sqlx::query_as(
         "SELECT action, action_duration_s
          FROM warn_thresholds
@@ -344,18 +321,19 @@ async fn applicable_threshold(
     .await
     .context("find threshold")?;
 
-    Ok(row.map(|(action, duration_s)| ThresholdAction { action, duration_s }))
+    row.map(|(kind, duration_s)| Action::from_db(&kind, duration_s))
+        .transpose()
 }
 
 async fn escalate(
     state: &AppState,
     guild_id: Id<GuildMarker>,
     user_id: Id<UserMarker>,
-    t: &ThresholdAction,
+    action: Action,
 ) -> Result<()> {
     let reason = "honeybot: warn threshold reached";
-    match t.action.as_str() {
-        "ban" => {
+    match action {
+        Action::Ban => {
             state
                 .http
                 .create_ban(guild_id, user_id)
@@ -363,7 +341,7 @@ async fn escalate(
                 .await
                 .context("create ban")?;
         }
-        "kick" => {
+        Action::Kick => {
             state
                 .http
                 .remove_guild_member(guild_id, user_id)
@@ -371,8 +349,7 @@ async fn escalate(
                 .await
                 .context("kick member")?;
         }
-        "timeout" => {
-            let secs = t.duration_s.unwrap_or(3600);
+        Action::Timeout(secs) => {
             let until_unix = chrono::Utc::now().timestamp() + secs;
             let until = Timestamp::from_secs(until_unix).context("invalid timestamp")?;
             state
@@ -382,9 +359,6 @@ async fn escalate(
                 .reason(reason)
                 .await
                 .context("apply timeout")?;
-        }
-        other => {
-            warn_log!(action = other, "unknown threshold action");
         }
     }
     Ok(())

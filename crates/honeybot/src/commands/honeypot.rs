@@ -17,6 +17,7 @@ use twilight_util::builder::command::{
 
 use crate::bot::AppState;
 use crate::commands::util::{option_channel, option_role, option_string, reply};
+use crate::domain::{Action, DEFAULT_TIMEOUT_SECS};
 
 pub fn definition() -> Command {
     CommandBuilder::new(
@@ -106,13 +107,10 @@ async fn add(
     options: &[CommandDataOption],
 ) -> Result<String> {
     let channel = option_channel(options, "channel")?;
-    let action = option_string(options, "action")?;
-
-    let action_duration_s: Option<i64> = if action == "timeout" {
-        Some(3600)
-    } else {
-        None
-    };
+    let action = Action::from_db(
+        &option_string(options, "action")?,
+        Some(DEFAULT_TIMEOUT_SECS),
+    )?;
 
     sqlx::query("INSERT OR IGNORE INTO guilds (id) VALUES (?)")
         .bind(guild_id.get() as i64)
@@ -129,16 +127,15 @@ async fn add(
     )
     .bind(guild_id.get() as i64)
     .bind(channel.get() as i64)
-    .bind(&action)
-    .bind(action_duration_s)
+    .bind(action.kind_str())
+    .bind(action.duration_secs())
     .execute(&state.db)
     .await
     .context("upsert honeypot channel")?;
 
     Ok(format!(
-        "Honeypot configured for <#{}> — action: `{}`.",
-        channel.get(),
-        action
+        "Honeypot configured for <#{}> — action: `{action}`.",
+        channel.get()
     ))
 }
 
@@ -186,16 +183,9 @@ async fn list(
     }
 
     let mut out = String::from("**Honeypot channels:**\n");
-    for (channel_id, action, duration) in rows {
-        match action.as_str() {
-            "timeout" => {
-                let mins = duration.unwrap_or(3600) / 60;
-                out.push_str(&format!("• <#{channel_id}> — timeout {mins}m\n"));
-            }
-            _ => {
-                out.push_str(&format!("• <#{channel_id}> — {action}\n"));
-            }
-        }
+    for (channel_id, action_str, duration) in rows {
+        let action = Action::from_db(&action_str, duration)?;
+        out.push_str(&format!("• <#{channel_id}> — {action}\n"));
     }
     Ok(out)
 }
