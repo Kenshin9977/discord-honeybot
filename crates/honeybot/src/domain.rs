@@ -9,6 +9,10 @@
 
 use anyhow::{Result, anyhow};
 use std::fmt;
+use twilight_model::id::Id;
+use twilight_model::id::marker::{GuildMarker, UserMarker};
+
+use crate::actions::ModerationActions;
 
 /// Default timeout when one isn't specified explicitly.
 pub const DEFAULT_TIMEOUT_SECS: i64 = 3600;
@@ -58,6 +62,26 @@ impl Action {
             Self::Ban => "honeypot-ban-dm",
             Self::Kick => "honeypot-kick-dm",
             Self::Timeout(_) => "honeypot-timeout-dm",
+        }
+    }
+
+    /// Dispatch this action through a `ModerationActions` impl. The single
+    /// definition replaces what used to be a duplicated `match` in both the
+    /// honeypot trigger handler and the warn auto-escalation path.
+    pub async fn execute(
+        self,
+        actions: &dyn ModerationActions,
+        guild: Id<GuildMarker>,
+        user: Id<UserMarker>,
+        reason: &str,
+    ) -> Result<()> {
+        match self {
+            Self::Ban => actions.ban(guild, user, reason).await,
+            Self::Kick => actions.kick(guild, user, reason).await,
+            Self::Timeout(secs) => {
+                let until = chrono::Utc::now().timestamp() + secs;
+                actions.timeout(guild, user, until, reason).await
+            }
         }
     }
 }

@@ -6,7 +6,6 @@
 use anyhow::{Context, Result, anyhow};
 use std::sync::Arc;
 use tracing::warn as warn_log;
-use twilight_http::request::AuditLogReason;
 use twilight_model::application::command::{Command, CommandType};
 use twilight_model::application::interaction::Interaction;
 use twilight_model::application::interaction::application_command::{
@@ -14,7 +13,6 @@ use twilight_model::application::interaction::application_command::{
 };
 use twilight_model::id::Id;
 use twilight_model::id::marker::{ApplicationMarker, GuildMarker, UserMarker};
-use twilight_model::util::Timestamp;
 use twilight_util::builder::command::{
     CommandBuilder, IntegerBuilder, StringBuilder, SubCommandBuilder, SubCommandGroupBuilder,
     UserBuilder,
@@ -150,7 +148,15 @@ async fn add(
     );
 
     if let Some(action) = applicable_threshold(state, guild_id, count).await? {
-        match escalate(state, guild_id, user_id, action).await {
+        match action
+            .execute(
+                &*state.actions,
+                guild_id,
+                user_id,
+                "honeybot: warn threshold reached",
+            )
+            .await
+        {
             Ok(()) => {
                 summary.push_str(&format!("\nThreshold reached — auto action: `{action}`."));
             }
@@ -315,43 +321,4 @@ async fn applicable_threshold(
 
     row.map(|(kind, duration_s)| Action::from_db(&kind, duration_s))
         .transpose()
-}
-
-async fn escalate(
-    state: &AppState,
-    guild_id: Id<GuildMarker>,
-    user_id: Id<UserMarker>,
-    action: Action,
-) -> Result<()> {
-    let reason = "honeybot: warn threshold reached";
-    match action {
-        Action::Ban => {
-            state
-                .http
-                .create_ban(guild_id, user_id)
-                .reason(reason)
-                .await
-                .context("create ban")?;
-        }
-        Action::Kick => {
-            state
-                .http
-                .remove_guild_member(guild_id, user_id)
-                .reason(reason)
-                .await
-                .context("kick member")?;
-        }
-        Action::Timeout(secs) => {
-            let until_unix = chrono::Utc::now().timestamp() + secs;
-            let until = Timestamp::from_secs(until_unix).context("invalid timestamp")?;
-            state
-                .http
-                .update_guild_member(guild_id, user_id)
-                .communication_disabled_until(Some(until))
-                .reason(reason)
-                .await
-                .context("apply timeout")?;
-        }
-    }
-    Ok(())
 }

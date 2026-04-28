@@ -46,6 +46,7 @@ unic-langid = "0.9"
 
 # Misc
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+async-trait = "0.1"
 
 [profile.release]
 opt-level = 3

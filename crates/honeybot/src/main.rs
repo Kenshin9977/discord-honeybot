@@ -6,6 +6,7 @@
 
 use anyhow::Result;
 
+mod actions;
 mod bot;
 mod commands;
 mod config;

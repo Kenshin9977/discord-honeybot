@@ -11,9 +11,14 @@ use twilight_model::gateway::event::Event;
 use twilight_model::id::Id;
 use twilight_model::id::marker::ApplicationMarker;
 
+use crate::actions::{ModerationActions, TwilightActions};
+
 /// Shared state passed to every handler.
 pub struct AppState {
+    /// Used for slash command registration and interaction responses.
     pub http: Arc<HttpClient>,
+    /// Mockable side-effects: ban/kick/timeout/DM/notification post.
+    pub actions: Arc<dyn ModerationActions>,
     pub db: SqlitePool,
     /// Filled on the first `Ready`. Reads must wait until then.
     pub application_id: OnceLock<Id<ApplicationMarker>>,
@@ -40,9 +45,11 @@ pub async fn run() -> Result<()> {
 
     let token = config.discord_token.clone();
     let http = Arc::new(HttpClient::new(token.clone()));
+    let actions: Arc<dyn ModerationActions> = Arc::new(TwilightActions::new(http.clone()));
 
     let state = Arc::new(AppState {
         http,
+        actions,
         db,
         application_id: OnceLock::new(),
     });
