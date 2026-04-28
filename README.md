@@ -30,13 +30,11 @@ the invite URL itself at startup.
 ### 2. Run it
 
 ```sh
-cp .env.example .env             # then put your token in .env
-make run                         # local dev (Rust ≥ 1.95 via rustup)
-# or:
-DISCORD_TOKEN=xxx docker compose up --build
+make run
 ```
 
-The startup log includes a line like:
+First time, the wizard asks for the token, writes a git-ignored `.env`,
+then starts the bot. Subsequent runs reuse it. The startup log includes:
 
 ```
 invite URL — open it to add this bot to a server
