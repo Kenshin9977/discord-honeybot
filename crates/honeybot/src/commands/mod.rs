@@ -12,6 +12,7 @@ use crate::bot::AppState;
 
 pub mod honeypot;
 pub mod setup;
+pub mod util;
 pub mod warn;
 
 /// Build the full command list this bot exposes. Called once and pushed to

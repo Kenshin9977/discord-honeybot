@@ -9,16 +9,14 @@ use twilight_model::application::interaction::Interaction;
 use twilight_model::application::interaction::application_command::{
     CommandData, CommandDataOption, CommandOptionValue,
 };
-use twilight_model::http::interaction::{
-    InteractionResponse, InteractionResponseData, InteractionResponseType,
-};
 use twilight_model::id::Id;
-use twilight_model::id::marker::{ApplicationMarker, ChannelMarker, GuildMarker};
+use twilight_model::id::marker::{ApplicationMarker, GuildMarker};
 use twilight_util::builder::command::{
     ChannelBuilder, CommandBuilder, StringBuilder, SubCommandBuilder,
 };
 
 use crate::bot::AppState;
+use crate::commands::util::{option_channel, option_string, reply};
 
 const SUPPORTED_LOCALES: [(&str, &str); 2] = [("English", "en"), ("Français", "fr")];
 
@@ -168,51 +166,4 @@ async fn notif(
     .context("update notification channel")?;
 
     Ok(format!("Notification channel set to <#{}>.", channel.get()))
-}
-
-fn option_string(options: &[CommandDataOption], name: &str) -> Result<String> {
-    options
-        .iter()
-        .find(|o| o.name == name)
-        .and_then(|o| match &o.value {
-            CommandOptionValue::String(s) => Some(s.clone()),
-            _ => None,
-        })
-        .ok_or_else(|| anyhow!("missing string option `{name}`"))
-}
-
-fn option_channel(options: &[CommandDataOption], name: &str) -> Result<Id<ChannelMarker>> {
-    options
-        .iter()
-        .find(|o| o.name == name)
-        .and_then(|o| match o.value {
-            CommandOptionValue::Channel(id) => Some(id),
-            _ => None,
-        })
-        .ok_or_else(|| anyhow!("missing channel option `{name}`"))
-}
-
-async fn reply(
-    state: &AppState,
-    application_id: Id<ApplicationMarker>,
-    interaction: &Interaction,
-    content: &str,
-) -> Result<()> {
-    let response = InteractionResponse {
-        kind: InteractionResponseType::ChannelMessageWithSource,
-        data: Some(InteractionResponseData {
-            content: Some(content.to_owned()),
-            flags: Some(twilight_model::channel::message::MessageFlags::EPHEMERAL),
-            ..Default::default()
-        }),
-    };
-
-    state
-        .http
-        .interaction(application_id)
-        .create_response(interaction.id, &interaction.token, &response)
-        .await
-        .context("send interaction response")?;
-
-    Ok(())
 }

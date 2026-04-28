@@ -8,17 +8,15 @@ use twilight_model::application::interaction::Interaction;
 use twilight_model::application::interaction::application_command::{
     CommandData, CommandDataOption, CommandOptionValue,
 };
-use twilight_model::http::interaction::{
-    InteractionResponse, InteractionResponseData, InteractionResponseType,
-};
 use twilight_model::id::Id;
-use twilight_model::id::marker::{ApplicationMarker, ChannelMarker, GuildMarker, RoleMarker};
+use twilight_model::id::marker::{ApplicationMarker, ChannelMarker, GuildMarker};
 use twilight_util::builder::command::{
     ChannelBuilder, CommandBuilder, RoleBuilder, StringBuilder, SubCommandBuilder,
     SubCommandGroupBuilder,
 };
 
 use crate::bot::AppState;
+use crate::commands::util::{option_channel, option_role, option_string, reply};
 
 pub fn definition() -> Command {
     CommandBuilder::new(
@@ -331,63 +329,5 @@ async fn write_whitelist(
     .execute(&state.db)
     .await
     .context("update whitelist")?;
-    Ok(())
-}
-
-fn option_role(options: &[CommandDataOption], name: &str) -> Result<Id<RoleMarker>> {
-    options
-        .iter()
-        .find(|o| o.name == name)
-        .and_then(|o| match o.value {
-            CommandOptionValue::Role(id) => Some(id),
-            _ => None,
-        })
-        .ok_or_else(|| anyhow!("missing role option `{name}`"))
-}
-
-fn option_channel(options: &[CommandDataOption], name: &str) -> Result<Id<ChannelMarker>> {
-    options
-        .iter()
-        .find(|o| o.name == name)
-        .and_then(|o| match o.value {
-            CommandOptionValue::Channel(id) => Some(id),
-            _ => None,
-        })
-        .ok_or_else(|| anyhow!("missing channel option `{name}`"))
-}
-
-fn option_string(options: &[CommandDataOption], name: &str) -> Result<String> {
-    options
-        .iter()
-        .find(|o| o.name == name)
-        .and_then(|o| match &o.value {
-            CommandOptionValue::String(s) => Some(s.clone()),
-            _ => None,
-        })
-        .ok_or_else(|| anyhow!("missing string option `{name}`"))
-}
-
-async fn reply(
-    state: &AppState,
-    application_id: Id<ApplicationMarker>,
-    interaction: &Interaction,
-    content: &str,
-) -> Result<()> {
-    let response = InteractionResponse {
-        kind: InteractionResponseType::ChannelMessageWithSource,
-        data: Some(InteractionResponseData {
-            content: Some(content.to_owned()),
-            flags: Some(twilight_model::channel::message::MessageFlags::EPHEMERAL),
-            ..Default::default()
-        }),
-    };
-
-    state
-        .http
-        .interaction(application_id)
-        .create_response(interaction.id, &interaction.token, &response)
-        .await
-        .context("send interaction response")?;
-
     Ok(())
 }
