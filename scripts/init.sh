@@ -18,14 +18,20 @@ cat <<'BANNER'
  honeybot — first-time setup
 ─────────────────────────────────────────────────────────────────────────
 
-You only need a Discord bot token.
+Get a bot token:
 
   1. Open: https://discord.com/developers/applications
   2. Click 'New Application' (or pick an existing one)
   3. Open the 'Bot' tab on the left
   4. Click 'Reset Token' and copy the value
 
-(No 'privileged intents' to enable — honeybot uses only the basic ones.)
+That's all. Just leave every other setting on the page at its default —
+in particular, leave 'Privileged Gateway Intents' OFF. Honeybot doesn't
+need them.
+
+The bot's server permissions (Ban Members, Kick Members, etc.) come
+through the invite URL the bot will print at startup. You only click
+'Authorize' on that page; nothing to configure manually.
 
 ─────────────────────────────────────────────────────────────────────────
 

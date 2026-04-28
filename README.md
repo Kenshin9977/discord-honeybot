@@ -23,9 +23,15 @@ first launch.
 [discord.com/developers/applications](https://discord.com/developers/applications)
 → **New Application** → **Bot** tab → **Reset Token** → copy.
 
-That's it. **No privileged intents to toggle**, no OAuth URL to build, no
-permissions to tick — the bot uses only non-privileged intents and prints
-the invite URL itself at startup.
+That's all you need to touch on this page. Specifically:
+
+- **Privileged Gateway Intents** stay **off**. (Most bots ask you to
+  enable 'Server Members' and 'Message Content'; honeybot doesn't read
+  message text or subscribe to member events, so the privileged intents
+  are unused.)
+- **No OAuth URL Generator step**. The bot prints its own invite URL with
+  the right server permissions (Ban / Kick / Moderate Members, etc.)
+  pre-baked when it starts up.
 
 ### 2. Run it
 
