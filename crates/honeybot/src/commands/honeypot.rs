@@ -112,11 +112,7 @@ async fn add(
         Some(DEFAULT_TIMEOUT_SECS),
     )?;
 
-    sqlx::query("INSERT OR IGNORE INTO guilds (id) VALUES (?)")
-        .bind(guild_id.get() as i64)
-        .execute(&state.db)
-        .await
-        .context("upsert guild")?;
+    crate::db::ensure_guild(&state.db, guild_id).await?;
 
     sqlx::query(
         "INSERT INTO honeypot_channels (guild_id, channel_id, action, action_duration_s)

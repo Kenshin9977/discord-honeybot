@@ -88,11 +88,7 @@ async fn dispatch(state: Arc<AppState>, event: Event) -> Result<()> {
         Event::GuildCreate(guild) => {
             let guild_id = guild.id();
 
-            sqlx::query("INSERT OR IGNORE INTO guilds (id) VALUES (?)")
-                .bind(guild_id.get() as i64)
-                .execute(&state.db)
-                .await
-                .context("ensure guild row exists")?;
+            crate::db::ensure_guild(&state.db, guild_id).await?;
 
             if let Ok(app_id) = state.application_id()
                 && let Err(err) =

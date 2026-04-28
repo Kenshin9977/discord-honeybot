@@ -123,11 +123,7 @@ async fn add(
     let user_id = option_user(options, "user")?;
     let reason = option_string(options, "reason")?;
 
-    sqlx::query("INSERT OR IGNORE INTO guilds (id) VALUES (?)")
-        .bind(guild_id.get() as i64)
-        .execute(&state.db)
-        .await
-        .context("upsert guild")?;
+    crate::db::ensure_guild(&state.db, guild_id).await?;
 
     sqlx::query("INSERT INTO warns (guild_id, user_id, mod_id, reason) VALUES (?, ?, ?, ?)")
         .bind(guild_id.get() as i64)
@@ -255,11 +251,7 @@ async fn threshold_set(
     let timeout_secs = duration_min.unwrap_or(60).max(1) * 60;
     let action = Action::from_db(&action_kind, Some(timeout_secs))?;
 
-    sqlx::query("INSERT OR IGNORE INTO guilds (id) VALUES (?)")
-        .bind(guild_id.get() as i64)
-        .execute(&state.db)
-        .await
-        .context("upsert guild")?;
+    crate::db::ensure_guild(&state.db, guild_id).await?;
 
     sqlx::query(
         "INSERT INTO warn_thresholds (guild_id, count, action, action_duration_s)
