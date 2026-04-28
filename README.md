@@ -52,7 +52,7 @@ binary, systemd) and first-run wizard.
 
 ## Build
 
-Requires Rust ≥ 1.85.
+Requires Rust ≥ 1.95 (the project tracks current stable; `rust-toolchain.toml` will auto-fetch via `rustup`).
 
 ```sh
 cargo build --release

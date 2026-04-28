@@ -94,16 +94,15 @@ async fn dispatch(state: Arc<AppState>, event: Event) -> Result<()> {
                 .await
                 .context("ensure guild row exists")?;
 
-            if let Ok(app_id) = state.application_id() {
-                if let Err(err) =
+            if let Ok(app_id) = state.application_id()
+                && let Err(err) =
                     crate::commands::register_for_guild(&state, app_id, guild_id).await
-                {
-                    warn!(
-                        ?err,
-                        guild_id = guild_id.get(),
-                        "failed to register commands"
-                    );
-                }
+            {
+                warn!(
+                    ?err,
+                    guild_id = guild_id.get(),
+                    "failed to register commands"
+                );
             }
         }
         Event::MessageCreate(msg) => {

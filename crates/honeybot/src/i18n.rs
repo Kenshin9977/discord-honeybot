@@ -52,17 +52,16 @@ impl I18n {
             .get(&id)
             .or_else(|| self.bundles.get(&self.fallback));
 
-        if let Some(bundle) = bundle {
-            if let Some(message) = bundle.get_message(key) {
-                if let Some(pattern) = message.value() {
-                    let mut errors = vec![];
-                    let formatted = bundle.format_pattern(pattern, args, &mut errors);
-                    if !errors.is_empty() {
-                        tracing::warn!(?errors, key, lang, "i18n format errors");
-                    }
-                    return formatted.into_owned();
-                }
+        if let Some(bundle) = bundle
+            && let Some(message) = bundle.get_message(key)
+            && let Some(pattern) = message.value()
+        {
+            let mut errors = vec![];
+            let formatted = bundle.format_pattern(pattern, args, &mut errors);
+            if !errors.is_empty() {
+                tracing::warn!(?errors, key, lang, "i18n format errors");
             }
+            return formatted.into_owned();
         }
 
         tracing::warn!(key, lang, "missing i18n key");
