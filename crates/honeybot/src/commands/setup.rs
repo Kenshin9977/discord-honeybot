@@ -16,7 +16,9 @@ use twilight_util::builder::command::{
 };
 
 use crate::bot::AppState;
-use crate::commands::util::{option_channel, option_string, reply};
+use crate::commands::util::{
+    option_channel, option_channel_opt, option_string, option_string_opt, reply,
+};
 
 const SUPPORTED_LOCALES: [(&str, &str); 2] = [("English", "en"), ("Français", "fr")];
 
@@ -34,22 +36,23 @@ pub fn definition() -> Command {
         CommandType::ChatInput,
     )
     .option(
+        // Both options are optional: bare `/honeybot setup` defaults to
+        // English and uses the channel the command was invoked from as the
+        // notification channel. The shortest path to a working bot is then:
+        //   /honeybot setup
+        //   /honeypot add #trap ban
         SubCommandBuilder::new(
             "setup",
-            "Set the language and notification channel in one go.",
+            "Initial config. Defaults to English + the current channel for notifications.",
         )
         .option(
-            StringBuilder::new("language", "Locale for bot messages.")
-                .required(true)
+            StringBuilder::new("language", "Locale for bot messages (default: English).")
                 .choices(setup_lang_choices),
         )
-        .option(
-            ChannelBuilder::new(
-                "notification_channel",
-                "Channel where the bot posts honeypot triggers, warns and escalations.",
-            )
-            .required(true),
-        ),
+        .option(ChannelBuilder::new(
+            "notification_channel",
+            "Channel where the bot posts triggers and escalations (default: this channel).",
+        )),
     )
     .option(
         SubCommandBuilder::new("lang", "Change the locale for bot messages.").option(
@@ -89,8 +92,10 @@ pub async fn handle(
         return Err(anyhow!("expected subcommand value"));
     };
 
+    let invoking_channel = interaction.channel.as_ref().map(|c| c.id);
+
     let content = match sub.name.as_str() {
-        "setup" => setup(&state, guild_id, opts).await?,
+        "setup" => setup(&state, guild_id, invoking_channel, opts).await?,
         "lang" => lang(&state, guild_id, opts).await?,
         "notif" => notif(&state, guild_id, opts).await?,
         other => format!("Unknown subcommand `{other}`."),
@@ -102,10 +107,15 @@ pub async fn handle(
 async fn setup(
     state: &AppState,
     guild_id: Id<GuildMarker>,
+    invoking_channel: Option<Id<twilight_model::id::marker::ChannelMarker>>,
     options: &[CommandDataOption],
 ) -> Result<String> {
-    let language = option_string(options, "language")?;
-    let channel = option_channel(options, "notification_channel")?;
+    let language = option_string_opt(options, "language").unwrap_or_else(|| "en".to_owned());
+    let channel = option_channel_opt(options, "notification_channel")
+        .or(invoking_channel)
+        .ok_or_else(|| {
+            anyhow!("could not infer a notification channel; pass `notification_channel:`")
+        })?;
 
     sqlx::query(
         "INSERT INTO guilds (id, locale, notification_channel_id)
@@ -122,7 +132,7 @@ async fn setup(
     .context("upsert guild config")?;
 
     Ok(format!(
-        "Setup complete. Locale: `{language}`. Notification channel: <#{}>.\n\
+        "Setup complete. Locale: `{language}`. Notifications go to <#{}>.\n\
          Next: `/honeypot add #channel ban` to configure your first honeypot.",
         channel.get()
     ))

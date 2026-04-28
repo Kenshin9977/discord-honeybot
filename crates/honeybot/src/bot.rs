@@ -8,10 +8,32 @@ use twilight_gateway::{ConfigBuilder, EventTypeFlags, Shard, ShardId, StreamExt 
 use twilight_http::Client as HttpClient;
 use twilight_model::gateway::Intents;
 use twilight_model::gateway::event::Event;
+use twilight_model::guild::Permissions;
 use twilight_model::id::Id;
 use twilight_model::id::marker::ApplicationMarker;
 
 use crate::actions::{ModerationActions, TwilightActions};
+
+/// Permissions the bot needs once invited to a guild. Embedded in the
+/// generated invite URL so admins don't have to tick boxes.
+fn required_permissions() -> Permissions {
+    Permissions::VIEW_CHANNEL
+        | Permissions::SEND_MESSAGES
+        | Permissions::EMBED_LINKS
+        | Permissions::READ_MESSAGE_HISTORY
+        | Permissions::MANAGE_MESSAGES
+        | Permissions::KICK_MEMBERS
+        | Permissions::BAN_MEMBERS
+        | Permissions::MODERATE_MEMBERS
+}
+
+fn invite_url(application_id: Id<ApplicationMarker>) -> String {
+    format!(
+        "https://discord.com/oauth2/authorize?client_id={}&scope=bot+applications.commands&permissions={}",
+        application_id.get(),
+        required_permissions().bits()
+    )
+}
 
 /// Shared state passed to every handler.
 pub struct AppState {
@@ -54,11 +76,20 @@ pub async fn run() -> Result<()> {
         application_id: OnceLock::new(),
     });
 
-    let intents = Intents::GUILDS
-        | Intents::GUILD_MESSAGES
-        | Intents::MESSAGE_CONTENT
-        | Intents::GUILD_MODERATION
-        | Intents::GUILD_MEMBERS;
+    // Minimum viable intents:
+    //   GUILDS         — needed to receive `GuildCreate` so we can register
+    //                    slash commands for new guilds.
+    //   GUILD_MESSAGES — needed to receive `MessageCreate` for the honeypot
+    //                    trigger. We do NOT read message *content* (the
+    //                    honeypot only cares about the channel id), so the
+    //                    privileged MESSAGE_CONTENT intent stays off.
+    //
+    // `member.roles` (used for whitelist matching) is included with every
+    // `MessageCreate` payload without GUILD_MEMBERS, so we don't need that
+    // privileged intent either. This means an admin self-hosting only has
+    // to: create an app, copy the token, click the invite URL we print at
+    // startup. No "Privileged Gateway Intents" toggle needed.
+    let intents = Intents::GUILDS | Intents::GUILD_MESSAGES;
 
     let shard_config = ConfigBuilder::new(token, intents).build();
     let mut shard = Shard::with_config(ShardId::ONE, shard_config);
@@ -91,6 +122,10 @@ async fn dispatch(state: Arc<AppState>, event: Event) -> Result<()> {
             let app_id = ready.application.id;
             let _ = state.application_id.set(app_id);
             info!(user = %ready.user.name, app_id = %app_id, "connected as bot");
+            info!(
+                url = %invite_url(app_id),
+                "invite URL — open it to add this bot to a server"
+            );
         }
         Event::GuildCreate(guild) => {
             let guild_id = guild.id();

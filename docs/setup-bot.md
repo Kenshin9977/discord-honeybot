@@ -6,13 +6,12 @@
 ## Prerequisites
 
 1. A Discord application + bot user. Create one at
-   <https://discord.com/developers/applications>. Enable the **Server Members**
-   and **Message Content** privileged intents.
+   <https://discord.com/developers/applications>. **No privileged intents
+   need to be enabled** — the bot uses only `Guilds` and `Guild Messages`.
 2. A bot token (`Bot` tab → *Reset Token*). Treat it like a password.
-3. A target server where you have `MANAGE_GUILD`. Use the OAuth2 URL generator
-   to invite the bot with at least these permissions:
-   *Manage Messages*, *Ban Members*, *Kick Members*, *Moderate Members*,
-   *Read Message History*, *Send Messages*, *Embed Links*.
+3. A target server where you have `MANAGE_GUILD`. The bot prints an invite
+   URL with the right permissions pre-set on its first startup; no manual
+   OAuth URL Generator step needed.
 
 ## Path 1 — Docker (recommended)
 
@@ -64,12 +63,14 @@ DATABASE_URL=sqlite:///var/lib/honeybot/honeybot.db?mode=rwc
 
 ## First-run wizard
 
-Once the bot is online in your server, any user with `MANAGE_GUILD` runs:
+The bot prints its invite URL on startup. Open it, pick a server. Once the
+bot is online, any admin with `MANAGE_GUILD` runs:
 
 ```
 /honeybot setup
 ```
 
-The wizard prompts for: locale (`en` / `fr`), notification channel,
-optional first honeypot channel and action. All later changes are also
-slash-driven — you should never need to edit `.env` again.
+That's it — defaults to English with the current channel as the
+notification target. Override either with the `language:` and
+`notification_channel:` options. All later changes are also slash-driven;
+you should never need to edit `.env` again.

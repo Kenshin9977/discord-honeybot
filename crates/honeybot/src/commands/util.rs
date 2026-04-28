@@ -16,6 +16,10 @@ use twilight_model::id::marker::{ApplicationMarker, ChannelMarker, RoleMarker, U
 use crate::bot::AppState;
 
 pub fn option_string(options: &[CommandDataOption], name: &str) -> Result<String> {
+    option_string_opt(options, name).ok_or_else(|| anyhow!("missing string option `{name}`"))
+}
+
+pub fn option_string_opt(options: &[CommandDataOption], name: &str) -> Option<String> {
     options
         .iter()
         .find(|o| o.name == name)
@@ -23,10 +27,13 @@ pub fn option_string(options: &[CommandDataOption], name: &str) -> Result<String
             CommandOptionValue::String(s) => Some(s.clone()),
             _ => None,
         })
-        .ok_or_else(|| anyhow!("missing string option `{name}`"))
 }
 
 pub fn option_channel(options: &[CommandDataOption], name: &str) -> Result<Id<ChannelMarker>> {
+    option_channel_opt(options, name).ok_or_else(|| anyhow!("missing channel option `{name}`"))
+}
+
+pub fn option_channel_opt(options: &[CommandDataOption], name: &str) -> Option<Id<ChannelMarker>> {
     options
         .iter()
         .find(|o| o.name == name)
@@ -34,7 +41,6 @@ pub fn option_channel(options: &[CommandDataOption], name: &str) -> Result<Id<Ch
             CommandOptionValue::Channel(id) => Some(id),
             _ => None,
         })
-        .ok_or_else(|| anyhow!("missing channel option `{name}`"))
 }
 
 pub fn option_user(options: &[CommandDataOption], name: &str) -> Result<Id<UserMarker>> {
