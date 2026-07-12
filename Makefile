@@ -16,12 +16,7 @@ init: ## Interactive first-time setup: prompts for the Discord token.
 
 run: ## Run the bot locally. Triggers `make init` first if there is no .env.
 	@if [ ! -f .env ]; then $(MAKE) --no-print-directory init; fi
-	@set -a && source .env && set +a && \
-		if [ -z "$${DISCORD_TOKEN:-}" ]; then \
-			echo "DISCORD_TOKEN is missing or empty in .env. Edit .env and retry."; \
-			exit 1; \
-		fi && \
-		cargo run
+	@bash scripts/load-env-and-run.sh
 
 test: ## Run all unit + handler tests (no Discord required).
 	cargo test --workspace

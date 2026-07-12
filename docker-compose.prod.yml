@@ -1,0 +1,36 @@
+# NAS deploy (TrueNAS SCALE): pull the published GHCR image, let Watchtower
+# auto-update it. No build, no SSH from CI — the pipeline is:
+#
+#   git tag vX.Y.Z && git push --tags
+#     -> release.yml builds + pushes ghcr.io/kenshin9977/honeybot:latest
+#     -> Watchtower (below) sees the new digest and restarts the bot.
+#
+# First run on the NAS:
+#   echo "DISCORD_TOKEN=..." > .env
+#   docker compose -f docker-compose.prod.yml up -d
+
+services:
+  honeybot:
+    image: ghcr.io/kenshin9977/honeybot:latest
+    restart: unless-stopped
+    environment:
+      DISCORD_TOKEN: ${DISCORD_TOKEN:?set DISCORD_TOKEN in .env}
+      RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      - honeybot-data:/data
+    labels:
+      # Only containers with this label are watched (see WATCHTOWER_LABEL_ENABLE).
+      com.centurylinklabs.watchtower.enable: "true"
+
+  watchtower:
+    image: containrrr/watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      WATCHTOWER_LABEL_ENABLE: "true"   # only touch honeybot, not every container on the NAS
+      WATCHTOWER_CLEANUP: "true"         # prune the old image after each update
+      WATCHTOWER_POLL_INTERVAL: "300"    # check GHCR every 5 min
+
+volumes:
+  honeybot-data:
